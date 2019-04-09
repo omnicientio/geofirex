@@ -125,37 +125,28 @@ export class GeoFireCollectionRef {
     const centerHash = center.hash.substr(0, precision);
     const area = GeoFirePoint.neighbors(centerHash).concat(centerHash);
 
-    const queries = area.map(hash => {
-      const query = this.queryPoint(hash, field);
-      return createStream(query).pipe(snapToData());
+    var queries = area.map(function (hash) {
+        var query = _this.queryPoint(hash, field);
+        return query.get();
     });
 
-    const combo = combineLatest(...queries).pipe(
-      map(arr => {
-        const reduced = arr.reduce((acc, cur) => acc.concat(cur));
-        return reduced
-          .filter(val => {
-            const lat = val[field].geopoint.latitude;
-            const lng = val[field].geopoint.longitude;
-            return center.distance(lat, lng) <= radius * 1.02; // buffer for edge distances;
+    return Promise.all(queries).then((results)=> {
+      let documents = [];
+      results.map(function (snapshot){
+        if(!snapshot.empty){
+          snapshot.docs.filter(function (docSnap) {
+              const docData = docSnap.data();
+              var lat = docData[field].geopoint.latitude;
+              var lng = docData[field].geopoint.longitude;
+              return center.distance(lat, lng) <= radius * 1.02; // buffer for edge distances;
           })
-
-          .map(val => {
-            const lat = val[field].geopoint.latitude;
-            const lng = val[field].geopoint.longitude;
-            const queryMetadata = {
-              distance: center.distance(lat, lng),
-              bearing: center.bearing(lat, lng)
-            };
-            return { ...val, queryMetadata };
-          })
-
-          .sort((a, b) => a.queryMetadata.distance - b.queryMetadata.distance);
-      }),
-      shareReplay(1)
-    );
-
-    return combo;
+          .map(function (docSnap){
+            documents.push(docSnap.data());
+          });
+        }
+      });
+      return documents;
+    });
   }
 
   first() {}
